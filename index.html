@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="네온 도시 위로 블록을 쌓아 최고 점수에 도전하는 원 버튼 픽셀 아케이드 게임"
+    />
+    <title>STACK//99 — Night City Arcade</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-state="start">
+    <main class="arcade-shell" aria-label="STACK//99 게임">
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <section id="start-screen" class="screen is-active" aria-labelledby="game-title">
+        <div class="start-skyline" aria-hidden="true"></div>
+
+        <header class="brand-lockup">
+          <p class="eyebrow">Night City Arcade Presents</p>
+          <h1 id="game-title" class="game-logo">
+            <span>STACK</span><em>//99</em>
+          </h1>
+          <p class="game-tagline">Build high. Stay precise. Own the skyline.</p>
+        </header>
+
+        <form class="start-panel" id="player-form">
+          <div class="panel-kicker" aria-hidden="true">
+            <span>Player Registration</span>
+            <span>199X</span>
+          </div>
+
+          <label for="nickname-input">플레이어 닉네임</label>
+          <div class="nickname-field">
+            <span class="input-prefix" aria-hidden="true">P1</span>
+            <input
+              id="nickname-input"
+              name="nickname"
+              type="text"
+              minlength="2"
+              maxlength="12"
+              pattern="[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9 ]{2,12}"
+              title="한글·영문·숫자·공백만 사용해 2~12자로 입력해 주세요."
+              autocomplete="off"
+              placeholder="닉네임 입력"
+              aria-describedby="nickname-hint nickname-error"
+              required
+            />
+          </div>
+          <p id="nickname-hint" class="field-hint">한글·영문·숫자·공백 2–12자</p>
+          <p id="nickname-error" class="field-hint" role="alert"></p>
+
+          <div class="control-card">
+            <span class="keycap" aria-hidden="true">SPACE</span>
+            <p><strong>Space</strong> 또는 화면 클릭으로 블록 쌓기</p>
+          </div>
+
+          <button id="start-mute-button" class="sound-toggle" type="button" aria-pressed="false">
+            <span class="sound-icon" aria-hidden="true">×</span>
+            <span data-mute-label>SOUND OFF</span>
+          </button>
+
+          <button id="start-button" class="pixel-button is-primary" type="submit">
+            <span>Game Start</span>
+            <span aria-hidden="true">▶</span>
+          </button>
+        </form>
+
+        <footer class="start-footer">
+          <p><span class="status-dot"></span> SYSTEM READY</p>
+          <p>60 SEC · ONE BUTTON · ENDLESS SKYLINE</p>
+        </footer>
+      </section>
+
+      <section id="game-screen" class="screen" aria-label="게임 플레이" aria-hidden="true">
+        <div class="game-stage">
+          <canvas
+            id="game-canvas"
+            width="1280"
+            height="720"
+            tabindex="0"
+            aria-label="움직이는 블록을 쌓는 게임 영역. Space 키 또는 클릭으로 블록을 놓습니다."
+          ></canvas>
+
+          <header class="hud" aria-label="현재 게임 정보">
+            <div class="hud-brand" aria-hidden="true">
+              <span>STACK</span><b>//99</b>
+            </div>
+
+            <dl class="hud-stats">
+              <div class="hud-stat is-score">
+                <dt>Score</dt>
+                <dd id="score-value">000000</dd>
+              </div>
+              <div class="hud-stat">
+                <dt>Floor</dt>
+                <dd id="floor-value">00</dd>
+              </div>
+              <div class="hud-stat is-combo">
+                <dt>Combo</dt>
+                <dd id="combo-value">×0</dd>
+              </div>
+              <div class="hud-stat is-time">
+                <dt>Time</dt>
+                <dd id="time-value">01:00</dd>
+              </div>
+            </dl>
+
+            <button
+              id="mute-button"
+              class="icon-button"
+              type="button"
+              aria-label="효과음 켜기"
+              aria-pressed="true"
+              title="효과음 켜기/끄기"
+            >
+              <span class="sound-icon" aria-hidden="true">×</span>
+              <span class="sr-only">효과음</span>
+            </button>
+          </header>
+
+          <aside id="fever-panel" class="fever-panel" aria-label="네온 피버 게이지">
+            <div class="fever-heading">
+              <span>Neon</span>
+              <strong>Fever</strong>
+            </div>
+            <div
+              class="fever-track"
+              role="progressbar"
+              aria-label="네온 피버 충전량"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              aria-valuetext="PERFECT 0 / 3"
+            >
+              <span id="fever-fill" class="fever-fill"></span>
+            </div>
+            <p class="fever-hint"><b>PERFECT ×3</b><br />보너스 점수 2배</p>
+          </aside>
+
+          <p class="play-hint" aria-hidden="true">
+            <span class="keycap is-small">SPACE</span>
+            <span>블록 놓기</span>
+          </p>
+
+          <div id="countdown" class="countdown" aria-live="assertive" aria-atomic="true"></div>
+        </div>
+      </section>
+
+      <section id="result-screen" class="screen result-screen" aria-labelledby="result-title" aria-hidden="true">
+        <div class="result-heading">
+          <div>
+            <p class="eyebrow">Night City Run Complete</p>
+            <h2 id="result-title">오늘의 스카이라인 기록</h2>
+          </div>
+          <span class="result-stamp">Run Result</span>
+        </div>
+
+        <div class="result-card-frame">
+          <canvas
+            id="result-card-canvas"
+            width="1200"
+            height="675"
+            aria-label="플레이 결과 카드 미리보기"
+          ></canvas>
+        </div>
+
+        <div class="result-actions">
+          <button id="download-result" class="pixel-button is-primary" type="button">
+            <span aria-hidden="true">⇩</span>
+            <span>결과 카드 저장</span>
+          </button>
+          <button id="retry-button" class="pixel-button is-secondary" type="button">
+            <span aria-hidden="true">↻</span>
+            <span>다시 도전</span>
+          </button>
+          <button id="change-player" class="text-button" type="button">플레이어 변경</button>
+        </div>
+      </section>
+
+      <p id="status-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+    </main>
+
+    <script src="game-core.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>
