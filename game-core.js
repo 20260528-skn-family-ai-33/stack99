@@ -17,10 +17,10 @@
     PERFECT_THRESHOLD: 3,
     FEVER_DURATION_MS: 5000,
     ROUND_DURATION_MS: 60000,
-    START_SPEED: 170,
-    SPEED_STEP_FLOORS: 5,
-    SPEED_STEP: 30,
-    MAX_SPEED: 410,
+    START_SPEED: 230,
+    SPEED_STEP_FLOORS: 2,
+    SPEED_STEP: 45,
+    MAX_SPEED: 680,
   });
 
   function toFiniteNumber(value, fallback) {
@@ -48,6 +48,26 @@
     const x = toFiniteNumber(block && block.x, 0);
     const width = Math.max(0, toFiniteNumber(block && block.width, 0));
     return { x, width, right: x + width };
+  }
+
+  function getSpawnMotion(baseBlock, playLeft, playRight, random = Math.random) {
+    const base = normalizeBlock(baseBlock);
+    const left = toFiniteNumber(playLeft, 0);
+    const right = Math.max(left, toFiniteNumber(playRight, left) - base.width);
+    const approach = Math.min(180, (right - left) / 2);
+    const leftEnd = Math.min(right, base.x - approach);
+    const rightStart = Math.max(left, base.x + approach);
+    const canStartLeft = leftEnd >= left;
+    const canStartRight = rightStart <= right;
+    const pick = () => clamp(random(), 0, 1);
+
+    // 타워에서 최소 접근 거리를 확보할 수 있는 쪽과 그 안의 출발점을 추첨한다.
+    // 같은 방향이 연속으로 나올 수 있으며 층수의 홀짝과는 무관하다.
+    const fromRight = canStartLeft && canStartRight ? pick() >= 0.5
+      : canStartRight || (!canStartLeft && right - base.x > base.x - left);
+    const start = fromRight ? Math.min(right, rightStart) : left;
+    const end = fromRight ? right : Math.max(left, leftEnd);
+    return { x: start + (end - start) * pick(), fromRight };
   }
 
   function calculateOverlap(baseBlock, movingBlock) {
@@ -276,6 +296,7 @@
     CONFIG,
     clamp,
     getSpeed,
+    getSpawnMotion,
     calculateOverlap,
     resolvePlacement,
     calculateLayerScore,

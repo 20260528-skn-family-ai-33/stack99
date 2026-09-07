@@ -8,7 +8,7 @@
       content="네온 도시 위로 블록을 쌓아 최고 점수에 도전하는 원 버튼 픽셀 아케이드 게임"
     />
     <title>STACK//99 — Night City Arcade</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260907" />
   </head>
   <body data-state="start">
     <main class="arcade-shell" aria-label="STACK//99 게임">
@@ -120,6 +120,13 @@
             </button>
           </header>
 
+          <div class="time-track" aria-hidden="true"><span id="time-fill"></span></div>
+
+          <p class="pace-panel">
+            <span id="pace-value">SPEED 01</span>
+            <span id="rush-label">60초 스코어 어택</span>
+          </p>
+
           <aside id="fever-panel" class="fever-panel" aria-label="네온 피버 게이지">
             <div class="fever-heading">
               <span>Neon</span>
@@ -145,6 +152,7 @@
           </p>
 
           <div id="countdown" class="countdown" aria-live="assertive" aria-atomic="true"></div>
+          <div id="placement-feedback" class="placement-feedback" aria-hidden="true"></div>
         </div>
       </section>
 
@@ -182,7 +190,7 @@
       <p id="status-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
     </main>
 
-    <script src="game-core.js"></script>
-    <script src="game.js"></script>
+    <script src="game-core.js?v=20260907"></script>
+    <script src="game.js?v=20260907"></script>
   </body>
 </html>

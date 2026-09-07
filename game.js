@@ -21,13 +21,13 @@
     height: 720,
     playLeft: 220,
     playRight: 1060,
-    baseY: 672,
+    baseY: 630,
     blockHeight: 34,
     initialWidth: 260,
-    dropGap: 62,
-    dropDuration: 150,
-    spawnDelay: 130,
-    cameraTop: 168,
+    dropGap: 156,
+    dropDuration: 180,
+    spawnDelay: 70,
+    cameraTop: 450,
   });
 
   const SPRITES = Object.freeze({
@@ -76,6 +76,12 @@
     runStartedAt: 0,
     feverUntil: 0,
     endingAt: 0,
+    runEndedAt: 0,
+    feedbackUntil: 0,
+    speedUpUntil: 0,
+    impactAt: 0,
+    impactStrength: 0,
+    lastWarningSecond: null,
     endReason: "miss",
     lastFrameAt: 0,
     animationFrame: 0,
@@ -91,6 +97,7 @@
     backgroundReady: false,
     spritesReady: false,
   };
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   class SoundEngine {
     constructor() {
@@ -149,6 +156,11 @@
       } else if (name === "go") {
         this.tone(440, 0.08, "square", 0.025, 0);
         this.tone(880, 0.13, "square", 0.035, 0.09);
+      } else if (name === "speed") {
+        this.tone(440, 0.06, "triangle", 0.025, 0);
+        this.tone(660, 0.1, "triangle", 0.025, 0.06);
+      } else if (name === "tick") {
+        this.tone(880, 0.05, "sine", 0.025, 0);
       }
     }
   }
@@ -168,6 +180,10 @@
       "floor-value",
       "combo-value",
       "time-value",
+      "time-fill",
+      "pace-value",
+      "rush-label",
+      "placement-feedback",
       "fever-panel",
       "fever-fill",
       "countdown",
@@ -245,8 +261,11 @@
   }
 
   function loadBest(nickname) {
-    const raw = readBestMap()[bestKey(nickname)];
-    return raw ? Core.createRunResult(raw) : null;
+    const map = readBestMap();
+    const key = bestKey(nickname);
+    const raw = Object.hasOwn(map, key) ? map[key] : null;
+    return raw && typeof raw === "object" && !Array.isArray(raw)
+      ? Core.createRunResult(raw) : null;
   }
 
   function saveBest(result) {
@@ -331,6 +350,7 @@
       sound.ensureContext();
       sound.tone(660, 0.08, "square", 0.025, 0);
     }
+    if (state.screen === "game") dom.gameCanvas.focus({ preventScroll: true });
   }
 
   function resetRun() {
@@ -349,6 +369,13 @@
     state.runStartedAt = 0;
     state.feverUntil = 0;
     state.endingAt = 0;
+    state.runEndedAt = 0;
+    state.feedbackUntil = 0;
+    state.speedUpUntil = 0;
+    state.impactAt = 0;
+    state.impactStrength = 0;
+    state.lastWarningSecond = null;
+    dom.placementFeedback.classList.remove("is-visible");
     state.endReason = "miss";
     state.currentResult = null;
     state.bestResult = null;
@@ -418,7 +445,7 @@
 
   function spawnBlock(readyAt) {
     const previous = state.tower[state.tower.length - 1];
-    const fromRight = state.floors % 2 === 1;
+    const entry = Core.getSpawnMotion(previous, BOARD.playLeft, BOARD.playRight);
     const feverActive = readyAt < state.feverUntil;
     let sprite = state.floors % 2 === 0 ? "perfectBlock" : "cyanBlock";
     if (feverActive) sprite = "feverBlock";
@@ -426,10 +453,11 @@
     state.moving = {
       width: previous.width,
       speed: Core.getSpeed(state.floors),
-      fromRight,
+      fromRight: entry.fromRight,
+      startX: entry.x,
       spawnAt: readyAt,
       readyAt,
-      x: fromRight ? BOARD.playRight - previous.width : BOARD.playLeft,
+      x: entry.x,
       sprite,
       dropStartedAt: 0,
       lockedX: null,
@@ -443,7 +471,8 @@
     if (range === 0) return BOARD.playLeft;
 
     const elapsedSeconds = Math.max(0, now - block.spawnAt) / 1000;
-    const startPhase = block.fromRight ? range : 0;
+    const startX = Core.clamp(block.startX - BOARD.playLeft, 0, range);
+    const startPhase = block.fromRight ? range * 2 - startX : startX;
     const cycle = range * 2;
     const phase = (startPhase + block.speed * elapsedSeconds) % cycle;
     const localX = phase <= range ? phase : cycle - phase;
@@ -456,6 +485,11 @@
       state.tower.length * BOARD.blockHeight +
       state.camera
     );
+  }
+
+  function getDropGap() {
+    // 블록 크기를 줄이는 세로 화면에서도 낙하 공간은 화면 기준으로 유지한다.
+    return BOARD.dropGap / getObjectScale();
   }
 
   function getObjectScale() {
@@ -494,6 +528,17 @@
     state.moving.lockedX = movingX(state.moving, now);
     state.moving.dropStartedAt = now;
     state.phase = "dropping";
+    dom.placementFeedback.classList.remove("is-visible");
+    state.feedbackUntil = 0;
+  }
+
+  function showPlacementFeedback(label, kind, now) {
+    dom.placementFeedback.textContent = label;
+    dom.placementFeedback.dataset.kind = kind;
+    dom.placementFeedback.classList.remove("is-visible");
+    void dom.placementFeedback.offsetWidth;
+    dom.placementFeedback.classList.add("is-visible");
+    state.feedbackUntil = now + 650;
   }
 
   function settlePlacement(now) {
@@ -562,14 +607,26 @@
     }
 
     const feverActive = now < state.feverUntil;
-    state.score += Core.calculateLayerScore(
+    const layerScore = Core.calculateLayerScore(
       result.ratio,
       result.perfect,
       state.combo,
       feverActive,
     );
+    state.score += layerScore;
+    const label = feverProgress.triggered ? "NEON FEVER · BONUS ×2"
+      : result.perfect ? `PERFECT ×${state.combo}  +${layerScore}`
+      : `${Math.round(result.ratio * 100)}% MATCH  +${layerScore}`;
+    showPlacementFeedback(label, feverProgress.triggered ? "fever"
+      : result.perfect ? "perfect" : result.ratio < 0.5 ? "close" : "good", now);
+    state.impactAt = now;
+    state.impactStrength = result.perfect ? 3 : 1.5;
     state.accuracies.push(result.ratio * 100);
     state.floors += 1;
+    if (Core.getSpeed(state.floors) > Core.getSpeed(state.floors - 1)) {
+      state.speedUpUntil = now + 1100;
+      if (!feverProgress.triggered) sound.play("speed");
+    }
 
     let sprite = state.floors % 2 === 0 ? "cyanBlock" : "perfectBlock";
     if (feverActive) sprite = "feverBlock";
@@ -631,10 +688,12 @@
     if (state.phase === "ending" || state.phase === "finished") return;
     state.phase = "ending";
     state.endReason = reason;
+    state.runEndedAt = now;
     state.endingAt = now + (reason === "miss" ? 650 : 350);
     state.combo = 0;
     state.feverCharge = 0;
     state.feverUntil = 0;
+    showPlacementFeedback(reason === "miss" ? "MISSED" : "TIME UP", "close", now);
     if (reason === "miss") sound.play("miss");
     updateHud(now);
     announce(reason === "time-up" ? "시간이 종료되었습니다." : "블록이 빗나갔습니다.");
@@ -650,7 +709,7 @@
         }, 0) / state.accuracies.length
       : 0;
     const elapsed = state.runStartedAt
-      ? Math.min(now - state.runStartedAt, Core.CONFIG.ROUND_DURATION_MS)
+      ? Math.min(state.runEndedAt - state.runStartedAt, Core.CONFIG.ROUND_DURATION_MS)
       : 0;
 
     const result = Core.createRunResult({
@@ -679,7 +738,7 @@
 
   function update(now, deltaSeconds) {
     updateCameraTarget();
-    state.camera += (state.cameraTarget - state.camera) * Math.min(1, deltaSeconds * 8);
+    state.camera += (state.cameraTarget - state.camera) * (1 - Math.exp(-14 * deltaSeconds));
 
     state.fragments.forEach(function (fragment) {
       fragment.velocityY += 680 * deltaSeconds;
@@ -748,6 +807,35 @@
       remaining = Math.max(0, Core.CONFIG.ROUND_DURATION_MS - (now - state.runStartedAt));
     }
     dom.timeValue.textContent = Core.formatTime(remaining);
+    const running = state.phase === "playing" || state.phase === "dropping";
+    const urgency = running && remaining <= 10000 ? "critical"
+      : running && remaining <= 20000 ? "warning" : "normal";
+    dom.gameScreen.dataset.urgency = urgency;
+    dom.timeFill.style.transform = `scaleX(${remaining / Core.CONFIG.ROUND_DURATION_MS})`;
+    const pace = Math.floor((Core.getSpeed(state.floors) - Core.CONFIG.START_SPEED) / Core.CONFIG.SPEED_STEP) + 1;
+    dom.paceValue.textContent = `SPEED ${String(pace).padStart(2, "0")}`;
+    dom.gameScreen.classList.toggle("is-speed-up", running && now < state.speedUpUntil);
+    const top = state.tower[state.tower.length - 1];
+    dom.rushLabel.textContent = urgency === "critical" ? `LAST ${Math.ceil(remaining / 1000)}s · 마지막 스퍼트`
+      : urgency === "warning" ? "20초 이하 · 멈추지 마세요"
+      : now < state.speedUpUntil ? "SPEED UP ↑"
+      : top && top.width < BOARD.initialWidth * 0.3 ? "블록이 좁아요 · 타이밍에 집중"
+      : "60초 스코어 어택";
+    if (urgency === "critical") {
+      const second = Math.ceil(remaining / 1000);
+      if (second !== state.lastWarningSecond) {
+        state.lastWarningSecond = second;
+        sound.play("tick");
+      }
+    }
+    dom.placementFeedback.classList.toggle("is-visible", now < state.feedbackUntil);
+    // DOM 피드백은 Canvas의 cover/contain 변환까지 반영해 두 블록 사이에 둔다.
+    const canvasScale = getComputedStyle(dom.gameCanvas).objectFit === "cover"
+      ? Math.max(dom.gameCanvas.clientWidth / BOARD.width, dom.gameCanvas.clientHeight / BOARD.height)
+      : Math.min(dom.gameCanvas.clientWidth / BOARD.width, dom.gameCanvas.clientHeight / BOARD.height);
+    const feedbackY = BOARD.baseY + (targetY() - BOARD.baseY) * getObjectScale() - 48;
+    dom.placementFeedback.style.top = `${(feedbackY - BOARD.height / 2) * canvasScale + dom.gameCanvas.clientHeight / 2}px`;
+    dom.placementFeedback.style.left = "50%";
 
     const feverRemaining = Math.max(0, state.feverUntil - now);
     const feverActive = feverRemaining > 0;
@@ -920,7 +1008,8 @@
     const moving = state.moving;
     const x = movingX(moving, now);
     const target = targetY();
-    let y = target - BOARD.dropGap;
+    const dropGap = getDropGap();
+    let y = target - dropGap;
 
     if (moving.dropStartedAt) {
       const progress = Core.clamp(
@@ -928,18 +1017,35 @@
         0,
         1,
       );
-      const eased = 1 - Math.pow(1 - progress, 3);
-      y += BOARD.dropGap * eased;
+      const eased = progress * progress;
+      y += dropGap * eased;
     }
 
     context.save();
-    context.strokeStyle = "rgba(68, 246, 232, 0.18)";
+    context.strokeStyle = "rgba(68, 246, 232, 0.30)";
     context.setLineDash([5, 8]);
     context.beginPath();
     context.moveTo(x + moving.width / 2, y + 38);
     context.lineTo(x + moving.width / 2, target + 50);
     context.stroke();
+    const previous = state.tower[state.tower.length - 1];
+    context.setLineDash([5, 5]);
+    context.strokeStyle = "rgba(234, 251, 255, 0.34)";
+    context.strokeRect(previous.x, target, previous.width, 22);
     context.restore();
+    if (!moving.dropStartedAt && !reducedMotion.matches) {
+      const pastX = movingX(moving, now - 45);
+      context.save();
+      context.globalAlpha = 0.3;
+      context.strokeStyle = moving.sprite === "feverBlock" ? COLORS.amber : COLORS.cyan;
+      context.lineWidth = 3;
+      const trailX = x > pastX ? x : x + moving.width;
+      context.beginPath();
+      context.moveTo(trailX, y + 12);
+      context.lineTo(trailX + (pastX - x) * 2, y + 12);
+      context.stroke();
+      context.restore();
+    }
     drawSprite(context, moving.sprite, x, y - 12, moving.width, 54, 1);
   }
 
@@ -1009,6 +1115,10 @@
     const objectScale = getObjectScale();
 
     context.save();
+    const impactAge = now - state.impactAt;
+    if (!reducedMotion.matches && state.impactAt && impactAge < 150) {
+      context.translate(0, Math.sin(impactAge / 150 * Math.PI * 2) * state.impactStrength * (1 - impactAge / 150));
+    }
     context.translate(BOARD.width / 2, BOARD.baseY);
     context.scale(objectScale, objectScale);
     context.translate(-BOARD.width / 2, -BOARD.baseY);
@@ -1247,6 +1357,7 @@
     dom.retryButton.addEventListener("click", retry);
     dom.changePlayer.addEventListener("click", changePlayer);
     dom.gameCanvas.addEventListener("pointerdown", function (event) {
+      if (!event.isPrimary || event.button !== 0) return;
       event.preventDefault();
       handlePlacementInput();
     });
@@ -1304,6 +1415,14 @@
         feverCharge: state.feverCharge,
         perfectCount: state.perfectCount,
         muted: state.muted,
+        speed: state.moving ? state.moving.speed : Core.getSpeed(state.floors),
+        camera: state.camera,
+        objectScale: getObjectScale(),
+        towerTopY: BOARD.baseY - state.floors * BOARD.blockHeight + state.camera,
+        dropGap: getDropGap(),
+        moving: state.moving ? Object.freeze({ x: movingX(state.moving, performance.now()), width: state.moving.width, readyAt: state.moving.readyAt, startX: state.moving.startX, fromRight: state.moving.fromRight }) : null,
+        top: state.tower.length ? Object.freeze({ ...state.tower[state.tower.length - 1] }) : null,
+        result: state.currentResult,
       });
     },
   });
